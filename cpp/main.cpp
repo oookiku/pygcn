@@ -63,75 +63,37 @@ struct GCNImpl : nn::Module {
 TORCH_MODULE(GCN);
 
 
-
-
-void dispAdjMatrix(int n, torch::Tensor &adj)
-{
-  for (int i = 0; i < n; ++i) {
-    for (int j = 0; j < n; ++j) {
-      std::cout << (adj[i][j]).toType(torch::kInt64) << " ";
-    }
-    std::cout << std::endl;
-  }
-  std::cout << adj << std::endl;
-}
-
-void addEdge(int64_t u, int64_t v, torch::Tensor &adj)
+inline void addEdge(int64_t u, int64_t v, torch::Tensor &adj)
 {
   adj[u-1][v-1] = 1;
   adj[v-1][u-1] = 1;
 }
 
-torch::Tensor normalize(const torch::Tensor &mx)
+inline torch::Tensor normalize(const torch::Tensor &mx)
 {
   auto rowsum    = torch::sum(mx, 1);
   auto r_inv     = torch::pow(rowsum, -1.);
   auto r_mat_inv = torch::diag(r_inv);
   auto mx_hat    = torch::mm(r_mat_inv, mx.to(torch::kFloat32));
+
   return mx_hat;
 }
 
-torch::Tensor encodeOnehot(const torch::Tensor &label)
+inline torch::Tensor encodeOnehot(int n_class, const torch::Tensor &labels)
 {
-
-
-
+  auto onehot = torch::eye(n_class).index(labels);
+  return onehot;
 }
 
 
 int main() {
-  // making adjacency_matrix
-  std::ifstream file("../data/karate_edges_77.txt");
-
-  if (!file) {
-    std::cout << "Cannot open the file!" << std::endl;
-  }
-
-  constexpr int n = 34;
-  auto A = torch::zeros({n, n}, torch::kInt64);
-  int64_t u, v;
-  while(file >> u >> v) {
-    addEdge(u, v, A);
-  }
-
-  auto A_tilde = A + torch::eye(n).to(torch::kInt64);  
-  auto A_hat   = normalize(std::move(A_tilde));
-
-  auto labels = torch::zeros(n).to(torch::kInt64);
-
-  auto X = torch::eye(n).to(torch::kFloat32);
-
-  auto idx_train = torch::arange( 0, 10, 1).to(torch::kInt64);
-  auto idx_val   = torch::arange(10, 20, 1).to(torch::kInt64);
-  auto idx_test  = torch::arange(20, 34, 1).to(torch::kInt64);
-
   //
   // initial settings
   //
   const int64_t n_node    = 34;
   const int64_t n_feature = 34;
   const int64_t n_hidden  = 16;
-  const int64_t n_class   =  4; 
+  const int64_t n_class   =  2; 
 
   const int64_t n_epoch   = 100; 
 
@@ -139,7 +101,50 @@ int main() {
   const float beta1 = 5e-4;
 
   const float pdropout = 0.5;
- 
+
+
+  // making adjacency_matrix
+  std::ifstream file1("../data/karate_edges_77.txt");
+
+  if (!file1) {
+    std::cout << "Cannot open the file1 !" << std::endl;
+  }
+
+  constexpr int n = 34;
+  auto A = torch::zeros({n, n}, torch::kInt64);
+  int64_t u, v;
+  while(file1 >> u >> v) {
+    addEdge(u, v, A);
+  }
+
+  auto A_tilde = A + torch::eye(n).to(torch::kInt64);  
+  auto A_hat   = normalize(std::move(A_tilde));
+
+  std::ifstream file2("../data/karate_groups.txt");
+
+  if (!file2) {
+    std::cout << "Cannot open the file2 !" << std::endl;
+  }
+
+  auto labels = torch::zeros(n).to(torch::kInt64);
+
+  int64_t id, group;
+  while(file2 >> id >> group) {
+    labels[id-1] = group-1;
+  }
+
+  // std::cout << labels << std::endl;
+
+  auto labels_oh = encodeOnehot(n_class, std::move(labels));
+
+  // std::cout << labels_oh << std::endl;
+
+  auto X = torch::eye(n).to(torch::kFloat32);
+
+  auto idx_train = torch::arange( 0, 10, 1).to(torch::kInt64);
+  auto idx_val   = torch::arange(10, 20, 1).to(torch::kInt64);
+  auto idx_test  = torch::arange(20, 34, 1).to(torch::kInt64);
+
   //
   // model and optimizer
   //
@@ -161,23 +166,22 @@ int main() {
     device = torch::kCUDA;
   }
 
-/*
+
   //
   // training loop
   //
   for (int64_t epoch = 1; epoch <= n_epoch; ++epoch) {
     model->train();
-    optimizer->zero_grad();
-    auto output = gcn->forward(X, A_hat); 
-    float loss_train = loss(output.index(idx_train), labels.index(idx_train));
-    float acc_train  = accuracy(output.index(idx_train), labels.index(idx_train));
+    optimizer.zero_grad();
+    auto output = model->forward(X, A_hat); 
+    auto loss_train = F::nll_loss(output.index(idx_train), labels.index(idx_train));
+    // float acc_train  = accuracy(output.index(idx_train), labels.index(idx_train));
     loss_train.backward();
     optimizer.step();
-
-    float loss_val = loss(output.index(idx_val), labels.index(idx_val));
-    float acc_val  = accuracy(output.index(idx_val), labels.index(idx_val)); 
+    
+    auto loss_val = F::nll_loss(output.index(idx_val), labels.index(idx_val));
+    // float acc_val  = accuracy(output.index(idx_val), labels.index(idx_val)); 
   }
-*/
 
 /*
   //
