@@ -46,7 +46,7 @@ TORCH_MODULE(GraphConv);
 struct GCNImpl : nn::Module {
   GCNImpl(int64_t nfeat, int64_t nhid, int64_t nclass, float pdrop=0.5)
     : gc1_(register_module("gc1", GraphConv(nfeat, nhid))),
-      gc2_(register_module("gc2", GraphConv(nhid, nclass))),
+      gc2_(register_module("gc2", GraphConv(nhid, nclass)))
       pdrop_(pdrop)
   {}
 
@@ -75,7 +75,6 @@ inline torch::Tensor normalize(const torch::Tensor &mx)
   auto r_inv     = torch::pow(rowsum, -1.);
   auto r_mat_inv = torch::diag(r_inv);
   auto mx_hat    = torch::mm(r_mat_inv, mx.to(torch::kFloat32));
-
   return mx_hat;
 }
 
@@ -83,6 +82,20 @@ inline torch::Tensor encodeOnehot(int n_class, const torch::Tensor &labels)
 {
   auto onehot = torch::eye(n_class).index(labels);
   return onehot;
+}
+
+torch::Tensor accuracy(const torch::Tensor &output, const torch::Tensor &labels)
+{
+  constexpr int idx = 1;
+  constexpr int col = 0;
+  constexpr int row = 1;
+
+  auto preds = std::get<idx>(output.max(row)).type_as(labels);
+  auto correct = preds.eq(labels);
+  auto correct_sum = correct.sum().to(torch::kFloat64);
+  double col_len = labels.size(col);
+  auto len = torch::tensor(col_len).to(torch::kFloat64);
+  return correct_sum / len;
 }
 
 
@@ -95,7 +108,7 @@ int main() {
   const int64_t n_hidden  = 16;
   const int64_t n_class   =  2; 
 
-  const int64_t n_epoch   = 100; 
+  const int64_t n_epoch   = 500; 
 
   const float lr    = 0.01;
   const float beta1 = 5e-4;
@@ -103,7 +116,9 @@ int main() {
   const float pdropout = 0.5;
 
 
-  // making adjacency_matrix
+  //
+  // adjacency_matrix & feature matrix & lables
+  //
   std::ifstream file1("../data/karate_edges_77.txt");
 
   if (!file1) {
@@ -133,16 +148,10 @@ int main() {
     labels[id-1] = group-1;
   }
 
-  // std::cout << labels << std::endl;
-
-  auto labels_oh = encodeOnehot(n_class, std::move(labels));
-
-  // std::cout << labels_oh << std::endl;
-
   auto X = torch::eye(n).to(torch::kFloat32);
 
-  auto idx_train = torch::arange( 0, 10, 1).to(torch::kInt64);
-  auto idx_val   = torch::arange(10, 20, 1).to(torch::kInt64);
+  auto idx_train = torch::arange( 0, 17, 1).to(torch::kInt64);
+  auto idx_val   = torch::arange(17, 34, 1).to(torch::kInt64);
   auto idx_test  = torch::arange(20, 34, 1).to(torch::kInt64);
 
   //
@@ -175,21 +184,17 @@ int main() {
     optimizer.zero_grad();
     auto output = model->forward(X, A_hat); 
     auto loss_train = F::nll_loss(output.index(idx_train), labels.index(idx_train));
-    // float acc_train  = accuracy(output.index(idx_train), labels.index(idx_train));
+    auto acc_train = accuracy(output.index(idx_train), labels.index(idx_train));
     loss_train.backward();
     optimizer.step();
-    
-    auto loss_val = F::nll_loss(output.index(idx_val), labels.index(idx_val));
-    // float acc_val  = accuracy(output.index(idx_val), labels.index(idx_val)); 
-  }
 
-/*
-  //
-  // testing
-  //
-  model->eval();
-  auto output = model();
-  loss_test   = 
-  acc_test    = 
-*/
+    auto loss_val = F::nll_loss(output.index(idx_val), labels.index(idx_val));
+    auto acc_val = accuracy(output.index(idx_val), labels.index(idx_val));
+
+
+    std::cout << "loss_train : " << loss_train.item<float>() << std::endl;
+    std::cout << "acc_train  : " << acc_train.item<double>() << std::endl; 
+    std::cout << "loss_val   : " << loss_val.item<float>() << std::endl;
+    std::cout << "acc_val    : " << acc_val.item<double>() << std::endl;
+  }
 }
