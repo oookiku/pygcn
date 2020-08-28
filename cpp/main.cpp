@@ -2,66 +2,10 @@
 #include<iostream>
 #include<fstream>
 // #include"utils.hpp"
+#include "models.hpp"
 
 namespace nn = torch::nn;
 namespace F  = torch::nn::functional;
-
-//
-// definision of the Graph Convolution layer
-//
-struct GraphConvImpl : nn::Module {
-  GraphConvImpl(int64_t in_features, int64_t out_features, bool bias=true)
-    : in_features_(in_features),
-      out_features_(out_features),
-      weight_(register_parameter("weight", torch::randn({in_features, out_features})))
-  {
-    if (bias) {
-      bias_ = register_parameter("bias", torch::randn(out_features));
-    }
-    else {
-      // TODO
-      // bias_ = torch::Tensor(0);
-    }
-  }
-
-  torch::Tensor forward(const torch::Tensor &input, const torch::Tensor &adj) {
-    auto support = torch::mm(input, weight_);
-    auto output  = torch::mm(adj, support);
-    if (true) {
-      return output + bias_;
-    }
-    else {
-      return output;
-    }
-  }
-
-  int64_t in_features_, out_features_;
-  torch::Tensor weight_, bias_;  
-};
-TORCH_MODULE(GraphConv);
-
-//
-// definition of the Graph Convolutional Networks
-//
-struct GCNImpl : nn::Module {
-  GCNImpl(int64_t nfeat, int64_t nhid, int64_t nclass, float pdrop=0.5)
-    : gc1_(register_module("gc1", GraphConv(nfeat, nhid))),
-      gc2_(register_module("gc2", GraphConv(nhid, nclass)))
-      pdrop_(pdrop)
-  {}
-
-  torch::Tensor forward(const torch::Tensor &x, const torch::Tensor &adj) {
-    auto xtilde = F::relu(gc1_(x, adj));
-    xtilde = F::dropout(xtilde, F::DropoutFuncOptions().p(pdrop_));
-    xtilde = gc2_(xtilde, adj);
-    return F::log_softmax(xtilde, F::LogSoftmaxFuncOptions(1));
-  }
-
-  float pdrop_;
-  GraphConv gc1_, gc2_;
-};
-TORCH_MODULE(GCN);
-
 
 inline void addEdge(int64_t u, int64_t v, torch::Tensor &adj)
 {
@@ -194,7 +138,7 @@ int main() {
 
     std::cout << "loss_train : " << loss_train.item<float>() << std::endl;
     std::cout << "acc_train  : " << acc_train.item<double>() << std::endl; 
-    std::cout << "loss_val   : " << loss_val.item<float>() << std::endl;
-    std::cout << "acc_val    : " << acc_val.item<double>() << std::endl;
+    std::cout << "loss_val   : " << loss_val.item<float>()   << std::endl;
+    std::cout << "acc_val    : " << acc_val.item<double>()   << std::endl;
   }
 }
